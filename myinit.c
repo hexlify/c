@@ -7,13 +7,17 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <string.h>
 
-#define PROGS_COUNT 4
+#define PROGS_COUNT 3
 #define LOG_FILE "/tmp/myinit.log"
 #define DELAY 60
+#define MAX_LOG_STRING 150
 
 #define PERM_644 S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
 #define LOGMODE O_WRONLY | O_APPEND | O_CREAT
+
+int logfd;
 
 void fork_prog(char **prog, int *spid, int delay)
 {
@@ -24,7 +28,7 @@ void fork_prog(char **prog, int *spid, int delay)
         int out = open(prog[3], LOGMODE, PERM_644);
         if (in == -1 || out == -1)
         {
-            printf("%s %s (%i):\tFailed to open input/output files, errno=%i\n", prog[0], prog[1], getpid(), errno);
+            dprintf(logfd, "%s %s (%i):\tFailed to open input/output files, errno=%i\n", prog[0], prog[1], getpid(), errno);
             exit(1);
         }
 
@@ -51,18 +55,26 @@ void fork_prog(char **prog, int *spid, int delay)
         *spid = pid;
         if (delay)
         {
-            printf("%s %s (%i):\tProcess started (delayed=%i seconds)\n", prog[0], prog[1], pid, DELAY);
+            dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", prog[0], prog[1], pid, DELAY);
         }
         else
         {
-            printf("%s %s (%i):\tProcess started\n", prog[0], prog[1], pid);
+            dprintf(logfd, "%s %s (%i):\tProcess started\n", prog[0], prog[1], pid);
         }
     }
     else
     {
-        printf("%s %s:\tFailed to fork, errno=%i\n", prog[0], prog[1], errno);
+        dprintf(logfd, "%s %s:\tFailed to fork, errno=%i\n", prog[0], prog[1], errno);
         exit(1);
     }
+}
+
+void gracefully_term(int signum)
+{
+    dprintf(logfd, "Got SIGTERM. Gracefully terminating\n");
+    close(logfd);
+    // TODO wait над пидами
+    exit(0);
 }
 
 int main()
@@ -80,10 +92,6 @@ int main()
         setsid();
     }
 
-    // setup logging file
-    int out = open(LOG_FILE, LOGMODE, PERM_644);
-    dup2(out, STDOUT_FILENO);
-
     // close all file descriptors except STDIN STDOUT STDERR
     struct rlimit flim;
     getrlimit(RLIMIT_NOFILE, &flim);
@@ -92,11 +100,15 @@ int main()
 
     chdir("/");
 
+    // setup logging file
+    logfd = open(LOG_FILE, LOGMODE, PERM_644);
+
+    signal(SIGTERM, &gracefully_term);
+
     char *progs[PROGS_COUNT][4] = {
-        {"/tmp/mysleep.sh", "4s", "/tmp/in/1", "/tmp/out/1"},
+        {"/tmp/mysleep.sh", "10s", "/tmp/in/1", "/tmp/out/1"},
         {"/tmp/mysleep.sh", "90s", "/tmp/in/2", "/tmp/out/2"},
-        {"/tmp/mysleep.sh", "3s", "/tmp/in/3", "/tmp/out/3"},
-        {"trash", "1s", "/tmp/in/4", "/tmp/out/4"},
+        {"/tmp/mysleep.sh", "20s", "/tmp/in/3", "/tmp/out/3"},
     };
     int pids[PROGS_COUNT];
 
@@ -118,9 +130,8 @@ int main()
             }
         }
         int code = WEXITSTATUS(wstatus);
-        printf("%s %s (%i):\tProcess finished with code %i\n", progs[pi][0], progs[pi][1], pid, code);
+
+        dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi][0], progs[pi][1], pid, code);
         fork_prog(progs[pi], &pids[pi], code != 0);
     }
-
-    // wait над пидами
 }
