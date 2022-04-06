@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/myinit",
-            "args": ["readme.md"],
+            "args": ["myinit.conf"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
