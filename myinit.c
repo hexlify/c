@@ -12,12 +12,19 @@
 #define PROGS_COUNT 3
 #define LOG_FILE "/tmp/myinit.log"
 #define DELAY 60
-#define MAX_LOG_STRING 150
 
 #define PERM_644 S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
 #define LOGMODE O_WRONLY | O_APPEND | O_CREAT
 
 int logfd;
+int pids[PROGS_COUNT];
+
+// TODO: read from config
+char *progs[PROGS_COUNT][4] = {
+    {"/tmp/mysleep.sh", "7s", "/tmp/in/1", "/tmp/out/1"},
+    {"/tmp/mysleep.sh", "30s", "/tmp/in/2", "/tmp/out/2"},
+    {"/tmp/mysleep.sh", "10s", "/tmp/in/3", "/tmp/out/3"},
+};
 
 void fork_prog(char **prog, int *spid, int delay)
 {
@@ -54,13 +61,9 @@ void fork_prog(char **prog, int *spid, int delay)
     {
         *spid = pid;
         if (delay)
-        {
             dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", prog[0], prog[1], pid, DELAY);
-        }
         else
-        {
             dprintf(logfd, "%s %s (%i):\tProcess started\n", prog[0], prog[1], pid);
-        }
     }
     else
     {
@@ -69,16 +72,53 @@ void fork_prog(char **prog, int *spid, int delay)
     }
 }
 
+void startchilds()
+{
+    for (size_t i = 0; i < PROGS_COUNT; i++)
+        fork_prog(progs[i], &pids[i], 0);
+}
+
+void waitchilds()
+{
+    int wstatus;
+    for (size_t i = 0; i < PROGS_COUNT; i++)
+        wait(&wstatus);
+}
+
+void stopchilds()
+{
+    for (size_t i = 0; i < PROGS_COUNT; i++)
+    {
+        kill(pids[i], SIGTERM);
+        dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i][0], progs[i][1], pids[i]);
+    }
+}
+
 void gracefully_term(int signum)
 {
-    dprintf(logfd, "Got SIGTERM. Gracefully terminating\n");
+    dprintf(logfd, "Gracefully terminating\n");
+    stopchilds();
+    waitchilds();
     close(logfd);
-    // TODO wait над пидами
     exit(0);
+}
+
+void sighup_handler(int signum)
+{
+    stopchilds();
+    waitchilds();
+    // TODO: reread config
+    // TODO: reset pids arr
+    dprintf(logfd, "Config re-read\n");
+    startchilds();
 }
 
 int main()
 {
+    // clear pids arr, because this can cause killing not our child process by sighup
+    for (size_t i = 0; i < PROGS_COUNT; i++)
+        pids[i] = 0;
+
     // daemonize process
     if (getppid() != 1)
     {
@@ -103,19 +143,11 @@ int main()
     // setup logging file
     logfd = open(LOG_FILE, LOGMODE, PERM_644);
 
+    // setup signals handlers
     signal(SIGTERM, &gracefully_term);
+    signal(SIGHUP, &sighup_handler);
 
-    char *progs[PROGS_COUNT][4] = {
-        {"/tmp/mysleep.sh", "10s", "/tmp/in/1", "/tmp/out/1"},
-        {"/tmp/mysleep.sh", "90s", "/tmp/in/2", "/tmp/out/2"},
-        {"/tmp/mysleep.sh", "20s", "/tmp/in/3", "/tmp/out/3"},
-    };
-    int pids[PROGS_COUNT];
-
-    for (size_t i = 0; i < PROGS_COUNT; i++)
-    {
-        fork_prog(progs[i], &pids[i], 0);
-    }
+    startchilds();
 
     int wstatus;
     for (;;)
@@ -125,9 +157,7 @@ int main()
         for (; pi < PROGS_COUNT; pi++)
         {
             if (pids[pi] == pid)
-            {
                 break;
-            }
         }
         int code = WEXITSTATUS(wstatus);
 
