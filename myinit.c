@@ -26,7 +26,7 @@ char *progs[PROGS_COUNT][4] = {
     {"/tmp/mysleep.sh", "10s", "/tmp/in/3", "/tmp/out/3"},
 };
 
-void fork_prog(char **prog, int *spid, int delay)
+void _fork(char **prog, int *spid, int delay)
 {
     int pid = fork();
     if (pid == 0)
@@ -75,21 +75,16 @@ void fork_prog(char **prog, int *spid, int delay)
 void startchilds()
 {
     for (size_t i = 0; i < PROGS_COUNT; i++)
-        fork_prog(progs[i], &pids[i], 0);
-}
-
-void waitchilds()
-{
-    int wstatus;
-    for (size_t i = 0; i < PROGS_COUNT; i++)
-        wait(&wstatus);
+        _fork(progs[i], &pids[i], 0);
 }
 
 void stopchilds()
 {
+    int wstatus;
     for (size_t i = 0; i < PROGS_COUNT; i++)
     {
         kill(pids[i], SIGTERM);
+        wait(&wstatus);
         dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i][0], progs[i][1], pids[i]);
     }
 }
@@ -98,7 +93,6 @@ void gracefully_term(int signum)
 {
     dprintf(logfd, "Gracefully terminating\n");
     stopchilds();
-    waitchilds();
     close(logfd);
     exit(0);
 }
@@ -106,7 +100,6 @@ void gracefully_term(int signum)
 void sighup_handler(int signum)
 {
     stopchilds();
-    waitchilds();
     // TODO: reread config
     // TODO: reset pids arr
     dprintf(logfd, "Config re-read\n");
@@ -162,6 +155,6 @@ int main()
         int code = WEXITSTATUS(wstatus);
 
         dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi][0], progs[pi][1], pid, code);
-        fork_prog(progs[pi], &pids[pi], code != 0);
+        _fork(progs[pi], &pids[pi], code != 0);
     }
 }
