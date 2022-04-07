@@ -191,6 +191,18 @@ void sighup_handler(int signum)
     startchilds();
 }
 
+void checkpaths()
+{
+    for (int i = 0; i < pcount; i++)
+    {
+        if (strncmp("/", progs[i].filename, 1))
+        {
+            dprintf(logfd, "%i: Non absolute path found! Terminating\n", i);
+            gracefully_term(-1);
+        }
+    }
+}
+
 int main(int arc, char **argv)
 {
     // daemonize process
@@ -212,13 +224,18 @@ int main(int arc, char **argv)
     for (int fd = 3; fd < flim.rlim_max; fd++)
         close(fd);
 
-    // TODO: check are all paths valid
     chdir("/");
 
     // setup logging file
     logfd = open(LOG_FILE, LOGMODE, PERM_644);
 
+    if (strncmp("/", argv[1], 1))
+    {
+        dprintf(logfd, "Config filename have to be absolute path\n");
+        gracefully_term(-1);
+    }
     readconf(argv[1]);
+    checkpaths();
 
     // setup signals handlers
     signal(SIGTERM, &gracefully_term);
