@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/myinit",
-            "args": ["myinit.conf"],
+            "args": ["/home/egor/c/myinit.conf"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

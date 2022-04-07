@@ -16,10 +16,51 @@
 #define PERM_644 S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
 #define LOGMODE O_WRONLY | O_APPEND | O_CREAT
 
+typedef struct
+{
+    char *filename;
+    char **args;
+    char *_stdin;
+    char *_stdout;
+} PROG;
+
 int pcount = 0;
-wordexp_t *progs;
+PROG *progs;
 int *pids;
 int logfd;
+
+void freeprog(PROG p)
+{
+    free(p.filename);
+    free(p._stdin);
+    free(p._stdout);
+    int j = 0;
+    while (p.args[j] != NULL)
+    {
+        free(p.args[j]);
+        j++;
+    }
+    free(p.args);
+}
+
+PROG parse(wordexp_t w)
+{
+    PROG p = {
+        .filename = strdup(w.we_wordv[0]),
+        ._stdin = strdup(w.we_wordv[w.we_wordc - 2]),
+        ._stdout = strdup(w.we_wordv[w.we_wordc - 1])};
+
+    int argsc = w.we_wordc - 1;
+    char **args = malloc(sizeof(char *) * argsc);
+    for (size_t i = 0; i < argsc - 1; i++)
+        args[i] = strdup(w.we_wordv[i]);
+
+    // execv takes args that ends with NULL
+    args[argsc - 1] = NULL;
+
+    p.args = args;
+    return p;
+}
 
 void readconf(char *filename)
 {
@@ -36,7 +77,7 @@ void readconf(char *filename)
     rewind(conf);
 
     // main strcutures allocation
-    progs = malloc(sizeof(wordexp_t) * pcount);
+    progs = malloc(sizeof(PROG) * pcount);
     pids = malloc(sizeof(int) * pcount);
 
     char *l = NULL;
@@ -54,43 +95,24 @@ void readconf(char *filename)
         wordexp_t p;
         wordexp(ll, &p, 0);
 
-        progs[i] = p;
+        progs[i] = parse(p);
         pids[i] = 0;
         free(ll);
+        wordfree(&p);
     }
     free(l);
 }
 
-void parse(wordexp_t w, char **filename, char **stdin, char **stdout)
+void _fork(PROG p, int *spid, int delay)
 {
-    *filename = w.we_wordv[0];
-
-    // copy stdin to new string because this value will be NULLed
-    char *parsed_stdin = w.we_wordv[w.we_wordc - 2];
-    *stdin = malloc(sizeof(char) * (strlen(parsed_stdin) + 1));
-    *stdin = strcpy(*stdin, parsed_stdin);
-
-    *stdout = w.we_wordv[w.we_wordc - 1];
-
-    // execv takes args that ends with NULL
-    w.we_wordv[w.we_wordc - 2] = NULL;
-}
-
-void _fork(wordexp_t w, int *spid, int delay)
-{
-    char *filename, *stdin, *stdout;
-    parse(w, &filename, &stdin, &stdout);
-    char **args = w.we_wordv;
-
     int pid = fork();
     if (pid == 0)
     {
-        int in = open(stdin, O_RDONLY);
-        free(stdin);
-        int out = open(stdout, LOGMODE, PERM_644);
+        int in = open(p._stdin, O_RDONLY);
+        int out = open(p._stdout, LOGMODE, PERM_644);
         if (in == -1 || out == -1)
         {
-            dprintf(logfd, "%s %s (%i):\tFailed to open input/output files, errno=%i\n", args[0], args[1], getpid(), errno);
+            dprintf(logfd, "%s %s (%i):\tFailed to open input/output files, errno=%i\n", p.args[0], p.args[1], getpid(), errno);
             exit(1);
         }
 
@@ -105,26 +127,24 @@ void _fork(wordexp_t w, int *spid, int delay)
             sleep(DELAY);
         }
 
-        int err = execv(filename, args);
+        int err = execv(p.filename, p.args);
         if (err == -1)
         {
-            printf("%s %s (%i):\tFailed to exec, errno=%i\n", args[0], args[1], getpid(), errno);
+            printf("%s %s (%i):\tFailed to exec, errno=%i\n", p.args[0], p.args[1], getpid(), errno);
             exit(1);
         }
     }
     else if (pid > 0)
     {
-        free(stdin);
         *spid = pid;
         if (delay)
-            dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", args[0], args[1], pid, DELAY);
+            dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", p.args[0], p.args[1], pid, DELAY);
         else
-            dprintf(logfd, "%s %s (%i):\tProcess started\n", args[0], args[1], pid);
+            dprintf(logfd, "%s %s (%i):\tProcess started\n", p.args[0], p.args[1], pid);
     }
     else
     {
-        dprintf(logfd, "%s %s:\tFailed to fork, errno=%i\n", args[0], args[1], errno);
-        free(stdin);
+        dprintf(logfd, "%s %s:\tFailed to fork, errno=%i\n", p.args[0], p.args[1], errno);
         exit(1);
     }
 }
@@ -142,7 +162,7 @@ void stopchilds()
     {
         kill(pids[i], SIGTERM);
         wait(&wstatus);
-        dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i].we_wordv[0], progs[i].we_wordv[1], pids[i]);
+        dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i].args[0], progs[i].args[1], pids[i]);
     }
 }
 
@@ -154,7 +174,8 @@ void gracefully_term(int signum)
 
     // free resources
     for (size_t i = 0; i < pcount; i++)
-        wordfree(&progs[i]);
+        freeprog(progs[i]);
+
     free(pids);
     free(progs);
 
@@ -217,7 +238,7 @@ int main(int arc, char **argv)
         }
         int code = WEXITSTATUS(wstatus);
 
-        dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi].we_wordv[0], progs[pi].we_wordv[1], pid, code);
+        dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi].args[0], progs[pi].args[1], pid, code);
         _fork(progs[pi], &pids[pi], code != 0);
     }
 }
