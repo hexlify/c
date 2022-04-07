@@ -29,6 +29,8 @@ PROG *progs;
 int *pids;
 int logfd;
 
+char *config;
+
 void freeprog(PROG p)
 {
     free(p.filename);
@@ -62,11 +64,22 @@ PROG parse(wordexp_t w)
     return p;
 }
 
-void readconf(char *filename)
+void readconf()
 {
-    dprintf(logfd, "Reading %s config file\n", filename);
+    // config is re read
+    if (pcount != 0)
+    {
+        // free resources
+        for (size_t i = 0; i < pcount; i++)
+            freeprog(progs[i]);
 
-    FILE *conf = fopen(filename, "r");
+        free(pids);
+        free(progs);
+    }
+
+    dprintf(logfd, "Reading %s config file\n", config);
+
+    FILE *conf = fopen(config, "r");
     pcount = 1;
 
     while (!feof(conf))
@@ -185,9 +198,7 @@ void gracefully_term(int signum)
 void sighup_handler(int signum)
 {
     stopchilds();
-    // TODO: reread config
-    // TODO: reset pids arr
-    dprintf(logfd, "Config re-read\n");
+    readconf();
     startchilds();
 }
 
@@ -234,7 +245,9 @@ int main(int arc, char **argv)
         dprintf(logfd, "Config filename have to be absolute path\n");
         gracefully_term(-1);
     }
-    readconf(argv[1]);
+
+    config = argv[1];
+    readconf();
     checkpaths();
 
     // setup signals handlers
