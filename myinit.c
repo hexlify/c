@@ -224,11 +224,8 @@ int main(int arc, char **argv)
         signal(SIGTTIN, SIG_IGN);
         signal(SIGTTOU, SIG_IGN);
 
-        int pid = fork();
-        if (pid != 0) {
-            printf("%i\n", pid);
+        if (fork() != 0)
             exit(0);
-        }
 
         setsid();
     }
