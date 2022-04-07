@@ -21,9 +21,11 @@ wordexp_t *progs;
 int *pids;
 int logfd;
 
-int readconf(int arc, char **argv)
+void readconf(char *filename)
 {
-    FILE *conf = fopen(argv[1], "r");
+    dprintf(logfd, "Reading %s config file\n", filename);
+
+    FILE *conf = fopen(filename, "r");
     pcount = 1;
 
     while (!feof(conf))
@@ -59,68 +61,90 @@ int readconf(int arc, char **argv)
     free(l);
 }
 
-// void _fork(char **prog, int *spid, int delay)
-// {
-//     int pid = fork();
-//     if (pid == 0)
-//     {
-//         int in = open(prog[2], O_RDONLY);
-//         int out = open(prog[3], LOGMODE, PERM_644);
-//         if (in == -1 || out == -1)
-//         {
-//             dprintf(logfd, "%s %s (%i):\tFailed to open input/output files, errno=%i\n", prog[0], prog[1], getpid(), errno);
-//             exit(1);
-//         }
-//
-//         dup2(in, STDIN_FILENO);
-//         dup2(out, STDOUT_FILENO);
-//
-//         close(in);
-//         close(out);
-//
-//         if (delay)
-//         {
-//             sleep(DELAY);
-//         }
-//
-//         int err = execl(prog[0], prog[0], prog[1], NULL);
-//         if (err == -1)
-//         {
-//             printf("%s %s (%i):\tFailed to exec, errno=%i\n", prog[0], prog[1], getpid(), errno);
-//             exit(1);
-//         }
-//     }
-//     else if (pid > 0)
-//     {
-//         *spid = pid;
-//         if (delay)
-//             dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", prog[0], prog[1], pid, DELAY);
-//         else
-//             dprintf(logfd, "%s %s (%i):\tProcess started\n", prog[0], prog[1], pid);
-//     }
-//     else
-//     {
-//         dprintf(logfd, "%s %s:\tFailed to fork, errno=%i\n", prog[0], prog[1], errno);
-//         exit(1);
-//     }
-// }
-//
-// void startchilds()
-// {
-//     for (size_t i = 0; i < PROGS_COUNT; i++)
-//         _fork(progs[i], &pids[i], 0);
-// }
+void parse(wordexp_t w, char **filename, char **stdin, char **stdout)
+{
+    *filename = w.we_wordv[0];
 
-// void stopchilds()
-// {
-//     int wstatus;
-//     for (size_t i = 0; i < pcount; i++)
-//     {
-//         kill(pids[i], SIGTERM);
-//         wait(&wstatus);
-//         dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i][0], progs[i][1], pids[i]);
-//     }
-// }
+    // copy stdin to new string because this value will be NULLed
+    char *parsed_stdin = w.we_wordv[w.we_wordc - 2];
+    *stdin = malloc(sizeof(char) * (strlen(parsed_stdin) + 1));
+    *stdin = strcpy(*stdin, parsed_stdin);
+
+    *stdout = w.we_wordv[w.we_wordc - 1];
+
+    // execv takes args that ends with NULL
+    w.we_wordv[w.we_wordc - 2] = NULL;
+}
+
+void _fork(wordexp_t w, int *spid, int delay)
+{
+    char *filename, *stdin, *stdout;
+    parse(w, &filename, &stdin, &stdout);
+    char **args = w.we_wordv;
+
+    int pid = fork();
+    if (pid == 0)
+    {
+        int in = open(stdin, O_RDONLY);
+        free(stdin);
+        int out = open(stdout, LOGMODE, PERM_644);
+        if (in == -1 || out == -1)
+        {
+            dprintf(logfd, "%s %s (%i):\tFailed to open input/output files, errno=%i\n", args[0], args[1], getpid(), errno);
+            exit(1);
+        }
+
+        dup2(in, STDIN_FILENO);
+        dup2(out, STDOUT_FILENO);
+
+        close(in);
+        close(out);
+
+        if (delay)
+        {
+            sleep(DELAY);
+        }
+
+        int err = execv(filename, args);
+        if (err == -1)
+        {
+            printf("%s %s (%i):\tFailed to exec, errno=%i\n", args[0], args[1], getpid(), errno);
+            exit(1);
+        }
+    }
+    else if (pid > 0)
+    {
+        free(stdin);
+        *spid = pid;
+        if (delay)
+            dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", args[0], args[1], pid, DELAY);
+        else
+            dprintf(logfd, "%s %s (%i):\tProcess started\n", args[0], args[1], pid);
+    }
+    else
+    {
+        dprintf(logfd, "%s %s:\tFailed to fork, errno=%i\n", args[0], args[1], errno);
+        free(stdin);
+        exit(1);
+    }
+}
+
+void startchilds()
+{
+    for (size_t i = 0; i < pcount; i++)
+        _fork(progs[i], &pids[i], 0);
+}
+
+void stopchilds()
+{
+    int wstatus;
+    for (size_t i = 0; i < pcount; i++)
+    {
+        kill(pids[i], SIGTERM);
+        wait(&wstatus);
+        dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i].we_wordv[0], progs[i].we_wordv[1], pids[i]);
+    }
+}
 
 void gracefully_term(int signum)
 {
@@ -137,64 +161,63 @@ void gracefully_term(int signum)
     exit(0);
 }
 
-// void sighup_handler(int signum)
-// {
-//     stopchilds();
-//     // TODO: reread config
-//     // TODO: reset pids arr
-//     dprintf(logfd, "Config re-read\n");
-//     startchilds();
-// }
+void sighup_handler(int signum)
+{
+    stopchilds();
+    // TODO: reread config
+    // TODO: reset pids arr
+    dprintf(logfd, "Config re-read\n");
+    startchilds();
+}
 
-// int main1()
-// {
-//     // clear pids arr, because this can cause killing not our child process by sighup
-//     for (size_t i = 0; i < PROGS_COUNT; i++)
-//         pids[i] = 0;
+int main(int arc, char **argv)
+{
+    // daemonize process
+    if (getppid() != 1)
+    {
+        signal(SIGTSTP, SIG_IGN);
+        signal(SIGTTIN, SIG_IGN);
+        signal(SIGTTOU, SIG_IGN);
 
-//     // daemonize process
-//     if (getppid() != 1)
-//     {
-//         signal(SIGTSTP, SIG_IGN);
-//         signal(SIGTTIN, SIG_IGN);
-//         signal(SIGTTOU, SIG_IGN);
+        if (fork() != 0)
+            exit(0);
 
-//         if (fork() != 0)
-//             exit(0);
+        setsid();
+    }
 
-//         setsid();
-//     }
+    // close all file descriptors except STDIN STDOUT STDERR
+    struct rlimit flim;
+    getrlimit(RLIMIT_NOFILE, &flim);
+    for (int fd = 3; fd < flim.rlim_max; fd++)
+        close(fd);
 
-//     // close all file descriptors except STDIN STDOUT STDERR
-//     struct rlimit flim;
-//     getrlimit(RLIMIT_NOFILE, &flim);
-//     for (int fd = 3; fd < flim.rlim_max; fd++)
-//         close(fd);
+    // TODO: check are all paths valid
+    chdir("/");
 
-//     chdir("/");
+    // setup logging file
+    logfd = open(LOG_FILE, LOGMODE, PERM_644);
 
-//     // setup logging file
-//     logfd = open(LOG_FILE, LOGMODE, PERM_644);
+    readconf(argv[1]);
 
-//     // setup signals handlers
-//     signal(SIGTERM, &gracefully_term);
-//     signal(SIGHUP, &sighup_handler);
+    // setup signals handlers
+    signal(SIGTERM, &gracefully_term);
+    signal(SIGHUP, &sighup_handler);
 
-//     startchilds();
+    startchilds();
 
-//     int wstatus;
-//     for (;;)
-//     {
-//         int pid = wait(&wstatus);
-//         int pi = 0;
-//         for (; pi < PROGS_COUNT; pi++)
-//         {
-//             if (pids[pi] == pid)
-//                 break;
-//         }
-//         int code = WEXITSTATUS(wstatus);
+    int wstatus;
+    for (;;)
+    {
+        int pid = wait(&wstatus);
+        int pi = 0;
+        for (; pi < pcount; pi++)
+        {
+            if (pids[pi] == pid)
+                break;
+        }
+        int code = WEXITSTATUS(wstatus);
 
-//         dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi][0], progs[pi][1], pid, code);
-//         _fork(progs[pi], &pids[pi], code != 0);
-//     }
-// }
+        dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi].we_wordv[0], progs[pi].we_wordv[1], pid, code);
+        _fork(progs[pi], &pids[pi], code != 0);
+    }
+}
