@@ -103,7 +103,7 @@ void readconf(char *filename)
     free(l);
 }
 
-void _fork(PROG p, int *spid, int delay)
+void _fork(PROG p, int progid, int *spid, int delay)
 {
     int pid = fork();
     if (pid == 0)
@@ -112,7 +112,7 @@ void _fork(PROG p, int *spid, int delay)
         int out = open(p._stdout, LOGMODE, PERM_644);
         if (in == -1 || out == -1)
         {
-            dprintf(logfd, "%s %s (%i):\tFailed to open input/output files, errno=%i\n", p.args[0], p.args[1], getpid(), errno);
+            dprintf(logfd, "%i: %s (%i)\tFailed to open input/output files, errno=%i\n", progid, p.args[0], getpid(), errno);
             exit(1);
         }
 
@@ -130,7 +130,7 @@ void _fork(PROG p, int *spid, int delay)
         int err = execv(p.filename, p.args);
         if (err == -1)
         {
-            printf("%s %s (%i):\tFailed to exec, errno=%i\n", p.args[0], p.args[1], getpid(), errno);
+            printf("%i: %s (%i)\tFailed to exec, errno=%i\n", progid, p.args[0], getpid(), errno);
             exit(1);
         }
     }
@@ -138,13 +138,13 @@ void _fork(PROG p, int *spid, int delay)
     {
         *spid = pid;
         if (delay)
-            dprintf(logfd, "%s %s (%i):\tProcess started (delayed for %i seconds)\n", p.args[0], p.args[1], pid, DELAY);
+            dprintf(logfd, "%i: %s (%i)\tProcess started (delayed for %i seconds)\n", progid, p.args[9], pid, DELAY);
         else
-            dprintf(logfd, "%s %s (%i):\tProcess started\n", p.args[0], p.args[1], pid);
+            dprintf(logfd, "%i: %s (%i)\tProcess started\n", progid, p.args[0], pid);
     }
     else
     {
-        dprintf(logfd, "%s %s:\tFailed to fork, errno=%i\n", p.args[0], p.args[1], errno);
+        dprintf(logfd, "%i: %s\ttFailed to fork, errno=%i\n", progid, p.args[0], errno);
         exit(1);
     }
 }
@@ -152,17 +152,17 @@ void _fork(PROG p, int *spid, int delay)
 void startchilds()
 {
     for (size_t i = 0; i < pcount; i++)
-        _fork(progs[i], &pids[i], 0);
+        _fork(progs[i], i, &pids[i], 0);
 }
 
 void stopchilds()
 {
     int wstatus;
-    for (size_t i = 0; i < pcount; i++)
+    for (int i = 0; i < pcount; i++)
     {
         kill(pids[i], SIGTERM);
         wait(&wstatus);
-        dprintf(logfd, "%s %s (%i):\tProcess interrupted\n", progs[i].args[0], progs[i].args[1], pids[i]);
+        dprintf(logfd, "%i: %s (%i)\tProcess interrupted\n", i, progs[i].args[0], pids[i]);
     }
 }
 
@@ -238,7 +238,7 @@ int main(int arc, char **argv)
         }
         int code = WEXITSTATUS(wstatus);
 
-        dprintf(logfd, "%s %s (%i):\tProcess finished with code %i\n", progs[pi].args[0], progs[pi].args[1], pid, code);
-        _fork(progs[pi], &pids[pi], code != 0);
+        dprintf(logfd, "%i: %s (%i)\tProcess finished with code %i\n", pi, progs[pi].args[0], pid, code);
+        _fork(progs[pi], pi, &pids[pi], code != 0);
     }
 }
