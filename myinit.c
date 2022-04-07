@@ -15,6 +15,7 @@
 
 #define PERM_644 S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
 #define LOGMODE O_WRONLY | O_APPEND | O_CREAT
+#define READMODE O_RDONLY | O_CREAT
 
 typedef struct
 {
@@ -121,7 +122,7 @@ void _fork(PROG p, int progid, int *spid, int delay)
     int pid = fork();
     if (pid == 0)
     {
-        int in = open(p._stdin, O_RDONLY);
+        int in = open(p._stdin, READMODE, PERM_644);
         int out = open(p._stdout, LOGMODE, PERM_644);
         if (in == -1 || out == -1)
         {
