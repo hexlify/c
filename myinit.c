@@ -115,6 +115,7 @@ void readconf()
         wordfree(&p);
     }
     free(l);
+    fclose(conf);
 }
 
 void _fork(PROG p, int progid, int *spid, int delay)
@@ -230,10 +231,10 @@ int main(int arc, char **argv)
         setsid();
     }
 
-    // close all file descriptors except STDIN STDOUT STDERR
+    // close all file descriptors
     struct rlimit flim;
     getrlimit(RLIMIT_NOFILE, &flim);
-    for (int fd = 3; fd < flim.rlim_max; fd++)
+    for (int fd = 0; fd < flim.rlim_max; fd++)
         close(fd);
 
     chdir("/");
