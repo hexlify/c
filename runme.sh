@@ -11,6 +11,7 @@ gcc myinit.c -o myinit
 cp other/3procs.conf myinit.conf
 ./myinit $(realpath ./myinit.conf)
 
+sleep 3
 child_c=$(pgrep -P $(pgrep myinit) | wc -l)
 [ $child_c -eq 3 ] && echo 'Запущено 3 дочерних процесса: OK'
 
@@ -25,6 +26,7 @@ cp other/1procs.conf myinit.conf
 kill -SIGHUP $(pgrep myinit)
 echo 'Сигнал SIGHUP отправлен'
 
+sleep 1
 child_c=$(pgrep -P $(pgrep myinit) | wc -l)
 [ $child_c -eq 1 ] && echo 'Запущен 1 дочерний процесс: OK'
 
