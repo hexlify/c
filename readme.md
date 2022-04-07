@@ -1,5 +1,11 @@
 ## Requirements
 
 ```bash
-sudo apt-get install gcc gdb -y
+sudo apt-get install gcc -y
+```
+
+## Запуск
+
+```bash
+./runme.sh
 ```
