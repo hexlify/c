@@ -134,8 +134,11 @@ void _fork(PROG p, int progid, int *spid, int delay)
         dup2(in, STDIN_FILENO);
         dup2(out, STDOUT_FILENO);
 
-        close(in);
-        close(out);
+        // close only if it isn't STDIN_FILENO or STDOUT_FILENO
+        if (in > 1)
+            close(in);
+        if (out > 1)
+            close(out);
 
         if (delay)
         {
@@ -153,7 +156,7 @@ void _fork(PROG p, int progid, int *spid, int delay)
     {
         *spid = pid;
         if (delay)
-            dprintf(logfd, "%i: %s (%i)\tProcess started (delayed for %i seconds)\n", progid, p.args[9], pid, DELAY);
+            dprintf(logfd, "%i: %s (%i)\tProcess started (delayed for %i seconds)\n", progid, p.args[0], pid, DELAY);
         else
             dprintf(logfd, "%i: %s (%i)\tProcess started\n", progid, p.args[0], pid);
     }

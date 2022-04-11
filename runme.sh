@@ -30,6 +30,7 @@ sleep 1
 child_c=$(pgrep -P $(pgrep myinit) | wc -l)
 [ $child_c -eq 1 ] && echo 'Запущен 1 дочерний процесс: OK'
 
+sleep 3
 kill  $(pgrep myinit)
 echo 'Остановили myinit'
 
