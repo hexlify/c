@@ -102,8 +102,9 @@ void readconf()
 
         // removes \n from end of string
         int sub = strcspn(l, "\n");
-        char *ll = malloc(sizeof(char) * (sub + 1));
+        char *ll = malloc(sub + 1);
         strncpy(ll, l, sub);
+        ll[sub] = '\0';
 
         // parsing shell args string
         wordexp_t p;
