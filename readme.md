@@ -1,7 +1,7 @@
 ## Requirements
 
 ```bash
-sudo apt-get install gcc -y
+sudo apt-get install gcc make -y
 ```
 
 ## Запуск

@@ -6,7 +6,7 @@ cp ./other/program.sh /tmp/program3.sh
 mkdir -p /tmp/program_{in,out}
 rm -f /tmp/myinit.log
 
-gcc myinit.c -o myinit
+make
 
 cp other/3procs.conf myinit.conf
 ./myinit $(realpath ./myinit.conf)
